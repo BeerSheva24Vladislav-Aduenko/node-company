@@ -7,15 +7,11 @@ export default class Company {
   #departments;
 
   constructor() {
-    this.#employees = {};
-    this.#departments = {};
+    this.#employees = [];
+    this.#departments = [];
   }
 
   addEmployee(employee) {
-    if (!(employee instanceof Employee)) {
-      throw new Error("Invalid employee object");
-    }
-
     const id = employee.getId();
     const department = employee.getDepartment();
 
@@ -32,9 +28,6 @@ export default class Company {
   }
 
   getEmployees(id) {
-    if (!id) {
-      return Object.values(this.#employees);
-    }
     return this.#employees[id] || null;
   }
 
@@ -43,15 +36,30 @@ export default class Company {
     if (!employee) {
       throw new Error(`Employee with ID "${id}" does not exist.`);
     }
-
     const department = employee.getDepartment();
-    delete this.#employees[id];
 
     if (this.#departments[department]) {
       this.#departments[department] = this.#departments[department].filter(
         (e) => e.getId() !== id
       );
     }
+
+    if (this.#departments[department].length === 0) {
+      delete this.#departments[department];
+    }
+    delete this.#employees[id];
+  }
+
+  getDepartmentBudget(department) {
+    if (!this.#departments[department]) {
+      throw new Error(`Department ${department} does not exist`);
+    }
+    return (
+      this.#departments[department].reduce(
+        (total, employee) => total + employee.computeSalary()
+      ),
+      0
+    );
   }
 
   getDepartmentBudget(department) {
@@ -72,10 +80,7 @@ export default class Company {
     const managers = Object.values(this.#employees).filter(
       (employee) => employee instanceof Manager
     );
-
-    const maxFactor = Math.max(
-      ...managers.map((manager) => manager.getFactor())
-    );
+    const maxFactor = Math.max(...managers.map((managers)=>managers.getFactor()=maxFactor))
     return managers.filter((manager) => manager.getFactor() === maxFactor);
   }
 
