@@ -1,100 +1,98 @@
-import { writeFile, readFile } from "fs/promises";
 import Employee from "../dto/Employee.mjs";
 import Manager from "../dto/Manager.mjs";
-
+import {
+  EMPLOYEE_ALREADY_EXISTS,
+  EMPLOYEE_NOT_FOUND,
+  INVALID_EMPLOYEE_TYPE,
+} from "../exceptions/exceptions.mjs";
+import { readFile, writeFile } from "node:fs/promises";
 export default class Company {
-  #employees;
-  #departments;
-
+  #employees; //key - id, value - Employee {id:123, empl: {123,...}}
+  #departments; //key department, value array of employees working in the department
   constructor() {
-    this.#employees = [];
-    this.#departments = [];
+    this.#employees = {};
+    this.#departments = {};
+  }
+  
+  async addEmployee(employee) {
+    if (!(employee instanceof Employee)) {
+      throw Error(INVALID_EMPLOYEE_TYPE(employee));
+    }
+    if (this.#employees[employee.id]) {
+      throw Error(EMPLOYEE_ALREADY_EXISTS(employee.id));
+    }
+    this.#employees[employee.id] = employee;
+    this.#addDepartments(employee);
   }
 
-  addEmployee(employee) {
-    const id = employee.getId();
-    const department = employee.getDepartment();
-
-    if (this.#employees[id]) {
-      throw new Error(`Employee with ID "${id}" already exists.`);
+  #addDepartments(employee) {
+    const dep = employee.department;
+    if (!this.#departments[dep]) {
+      this.#departments[dep] = [];
     }
-
-    this.#employees[id] = employee;
-
-    if (!this.#departments[department]) {
-      this.#departments[department] = [];
-    }
-    this.#departments[department].push(employee);
+    this.#departments[dep].push(employee);
   }
 
-  getEmployees(id) {
-    return this.#employees[id] || null;
+  async getEmployee(id) {
+    return this.#employees[id] ?? null;
   }
 
-  removeEmployee(id) {
-    const employee = this.#employees[id];
-    if (!employee) {
-      throw new Error(`Employee with ID "${id}" does not exist.`);
+  async removeEmployee(id) {
+    if (!this.#employees[id]) {
+      throw Error(EMPLOYEE_NOT_FOUND(id));
     }
-    const department = employee.getDepartment();
-
-    if (this.#departments[department]) {
-      this.#departments[department] = this.#departments[department].filter(
-        (e) => e.getId() !== id
-      );
-    }
-
-    if (this.#departments[department].length === 0) {
-      delete this.#departments[department];
-    }
+    this.#removeDepartments(this.#employees[id]);
     delete this.#employees[id];
   }
 
-  getDepartmentBudget(department) {
-    if (!this.#departments[department]) {
-      throw new Error(`Department ${department} does not exist`);
+  #removeDepartments(employee) {
+    const employees = this.#departments[employee.department];
+    const index = employees.findIndex((e) => e.id === employee.id);
+    employees.splice(index, 1);
+    employees.length == 0 && delete this.#departments[employee.department];
+  }
+
+  async getDepartmentBudget(department) {
+    let res = 0;
+    const employees = this.#departments[department];
+    if (employees) {
+      res = employees.reduce((bud, cur) => bud + cur.computeSalary(), 0);
     }
-    return (
-      this.#departments[department].reduce(
-        (total, employee) => total + employee.computeSalary()
-      ),
-      0
-    );
+    return res;
   }
 
-  getDepartmentBudget(department) {
-    if (!this.#departments[department]) {
-      throw new Error(`Department "${department}" does not exist.`);
-    }
-    return this.#departments[department].reduce(
-      (total, employee) => total + employee.computeSalary(),
-      0
-    );
+  async getDepartments() {
+    return Object.keys(this.#departments).toSorted();
   }
 
-  getDepartments() {
-    return Object.keys(this.#departments);
-  }
-
-  getManagersWithMostFactor() {
+  async getManagersWithMostFactor() {
     const managers = Object.values(this.#employees).filter(
-      (employee) => employee instanceof Manager
+      (e) => e instanceof Manager
     );
-    const maxFactor = Math.max(...managers.map((managers)=>managers.getFactor()=maxFactor))
-    return managers.filter((manager) => manager.getFactor() === maxFactor);
+    managers.sort((m1, m2) => m2.getFactor() - m1.getFactor());
+    const res = [];
+    let index = 0;
+    if (managers.length > 0) {
+      const maxFactor = managers[0].getFactor();
+      while (
+        index < managers.length &&
+        managers[index].getFactor() == maxFactor
+      ) {
+        res.push(managers[index]);
+        index++;
+      }
+    }
+
+    return res;
+  }
+  async saveToFile(fileName) {
+    const employeesJSON = JSON.stringify(Object.values(this.#employees));
+    await writeFile(fileName, employeesJSON, "utf8");
   }
 
-  async saveToFile(filename) {
-    const data = {
-      employees: this.#employees,
-      departments: this.#departments,
-    };
-    await writeFile(filename, JSON.stringify(data));
-  }
-
-  async restoreFromFile(filename) {
-    const data = JSON.parse(await readFile(filename, "utf8"));
-    this.#employees = data.employees || {};
-    this.#departments = data.departments || {};
+  async restoreFromFile(fileName) {
+    const employeesPlain = JSON.parse(await readFile(fileName, "utf8"));
+    const employees = employeesPlain.map((e) => Employee.fromPlainObject(e));
+    employees.forEach((e) => this.addEmployee(e));
   }
 }

@@ -2,6 +2,10 @@ export default class Employee {
   static classMap = {
     Employee: new Employee(),
   };
+  static fromPlainObject(empl) {
+    Object.setPrototypeOf(empl, Employee.classMap[empl.className]);
+    return empl;
+  }
   constructor(id = 0, department = null, basicSalary = 0, className) {
     this.basicSalary = basicSalary;
     this.department = department;

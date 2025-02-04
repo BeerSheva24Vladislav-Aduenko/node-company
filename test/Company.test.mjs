@@ -1,10 +1,14 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, test } from "vitest";
 import Employee from "../src/dto/Employee.mjs";
-import Manager from "../src/dto/Manager.mjs";
 import WageEmployee from "../src/dto/WageEmployee.mjs";
 import SalesPerson from "../src/dto/SalesPerson.mjs";
+import Manager from "../src/dto/Manager.mjs";
 import Company from "../src/service/Company.mjs";
-
+import {
+  EMPLOYEE_ALREADY_EXISTS,
+  EMPLOYEE_NOT_FOUND,
+  INVALID_EMPLOYEE_TYPE,
+} from "../src/exceptions/exceptions.mjs";
 const ID1 = 123;
 const SALARY1 = 1000;
 const DEPARTMENT1 = "QA";
@@ -18,109 +22,121 @@ const DEPARTMENT4 = "Audit";
 const WAGE1 = 100;
 const HOURS1 = 10;
 const FACTOR1 = 2;
-const PERCENT1 = 1;
+const PERCENT1 = 0.01;
 const SALES1 = 10000;
 const FACTOR2 = 2.5;
 const ID5 = 300;
 const FACTOR3 = 3;
 const ID6 = 400;
 const ID7 = 500;
-
-let empl1, empl2, empl3, company;
-
-beforeEach(() => {
-  empl1 = new WageEmployee(ID1, DEPARTMENT1, SALARY1, WAGE1, HOURS1);
-  empl2 = new Manager(ID2, DEPARTMENT1, SALARY2, FACTOR1);
-  empl3 = new SalesPerson(
-    ID3,
-    DEPARTMENT2,
-    SALARY3,
-    WAGE1,
-    HOURS1,
-    PERCENT1,
-    SALES1
-  );
+const empl1 = new WageEmployee(ID1, DEPARTMENT1, SALARY1, WAGE1, HOURS1);
+const empl2 = new Manager(ID2, DEPARTMENT1, SALARY2, FACTOR1);
+const empl3 = new SalesPerson(
+  ID3,
+  DEPARTMENT2,
+  SALARY3,
+  WAGE1,
+  HOURS1,
+  PERCENT1,
+  SALES1
+);
+let company = new Company();
+const employees = [empl1, empl2, empl3];
+(async () => await fillCompany())();
+async function fillCompany() {
   company = new Company();
+  for await (const empl of employees) {
+    company.addEmployee(empl);
+  }
+}
 
-  [empl1, empl2, empl3].forEach((emp) => company.addEmployee(emp));
+describe("tests of company updating", () => {
+  beforeEach(async () => await fillCompany());
+  it(" adding new Employee", async () => {
+    const empl = new Employee(ID4, SALARY1, DEPARTMENT1);
+    await company.addEmployee(empl);
+    await expect(company.addEmployee(empl)).rejects.toThrowError(
+      EMPLOYEE_ALREADY_EXISTS(ID4)
+    );
+    await expect(company.addEmployee(2)).rejects.toThrow(
+      INVALID_EMPLOYEE_TYPE(2)
+    );
+  });
+
+  it("removing existing Employee", async () => {
+    await expect(company.removeEmployee(ID4)).rejects.toThrowError(
+      EMPLOYEE_NOT_FOUND(ID4)
+    );
+    await company.removeEmployee(ID1);
+    await company.addEmployee(empl1);
+  });
 });
 
-describe("Company Tests", () => {
-  it("should add an employee and retrieve it by ID", () => {
-    const empl = new Employee(ID4, DEPARTMENT1, SALARY1);
-    company.addEmployee(empl);
-    const retrievedEmployee = company.getEmployees(ID4);
-    expect(retrievedEmployee).toEqual(empl);
+describe("tests of company non-updating", async () => {
+  beforeEach(async () => await fillCompany());
+  it("getting Employee object test", async () => {
+    const empl = await company.getEmployee(ID1);
+    expect(empl.getId()).toBe(ID1);
+    expect(empl instanceof WageEmployee).toBeTruthy();
+    expect(await company.getEmployee(ID4)).toBeNull();
   });
 
-  it("testing to get an employee", () => {
-    expect(company.getEmployees(ID1)).toBe(empl1);
-  });
-
-  it("testing to get an employee who didn't exist", () => {
-    expect(company.getEmployees(ID4)).toBeNull();
-  });
-
-  it("remove an employee by ID", () => {
-    company.removeEmployee(ID1);
-    expect(company.getEmployees(ID1)).toBeNull();
-    expect(() => company.removeEmployee(ID1)).toThrowError(
-      'Employee with ID "123" does not exist.'
-    );
-  });
-
-  it("calculate budget of department", () => {
-    expect(company.getDepartmentBudget(DEPARTMENT1)).toBe(
-      SALARY1 + WAGE1 * HOURS1 + SALARY2 * FACTOR1
-    );
-    expect(company.getDepartmentBudget(DEPARTMENT2)).toBe(
-      SALARY3 + WAGE1 * HOURS1 + (PERCENT1 * SALES1) / 100
-    );
-    expect(() => company.getDepartmentBudget(DEPARTMENT4)).toThrowError(
-      'Department "Audit" does not exist.'
-    );
-  });
-
-  it("get departmets", () => {
-    const expected = [DEPARTMENT1, DEPARTMENT2].sort();
-    expect(company.getDepartments().sort()).toEqual(expected);
-    company.removeEmployee(ID3);
-    expect(company.getDepartments().sort()).toEqual([DEPARTMENT1]);
-  });
-
-
-  it("testGetManagersWithMostFactor", () => {
-    company.addEmployee(new Manager(ID4, DEPARTMENT1, SALARY1, FACTOR2));
+  it("getting Managers with maximal factor", async () => {
+    await company.addEmployee(new Manager(ID4, DEPARTMENT1, SALARY1, FACTOR2));
     const managersExpected = [
       new Manager(ID5, DEPARTMENT1, SALARY1, FACTOR3),
-      new Manager(ID6, DEPARTMENT1, SALARY1, FACTOR3),
-      new Manager(ID7, DEPARTMENT2, SALARY1, FACTOR3),
+      new Manager(ID6, SALARY1, DEPARTMENT1, FACTOR3),
+      new Manager(ID7, SALARY1, DEPARTMENT2, FACTOR3),
     ];
-    managersExpected.forEach((manager) => company.addEmployee(manager));
-    expect(company.getManagersWithMostFactor()).toEqual(managersExpected);
-
-    // [ID4, ID5, ID6, ID7].forEach((id) => company.removeEmployee(id));
-    // expect(company.getManagersWithMostFactor()).toEqual([empl2]);
-
-    // company.removeEmployee(ID2);
-    // expect(company.getManagersWithMostFactor()).toEqual([]);
+    for await (const mng of managersExpected) {
+      company.addEmployee(mng);
+    }
+    expect(await company.getManagersWithMostFactor()).toEqual(managersExpected);
+    await company.removeEmployee(ID4);
+    await company.removeEmployee(ID5);
+    await company.removeEmployee(ID6);
+    await company.removeEmployee(ID7);
+    expect(await company.getManagersWithMostFactor()).toEqual([empl2]);
+    await company.removeEmployee(ID2);
+    expect(await company.getManagersWithMostFactor()).toEqual([]);
   });
 
-  it("save to file test", () => {
-    const jsonStr =
-      '{"basicSalary":1000,"className":"Manager","id":123,"department":"QA","factor":2}';
-    const empl = JSON.parse(jsonStr, (key, value) => {
-      if (value.className === "Manager") {
-        return new Manager(
-          value.id,
-          value.department,
-          value.basicSalary,
-          value.factor
-        );
-      }
-      return value;
-    });
-    expect(empl).toEqual(new Manager(ID1, DEPARTMENT1, SALARY1, FACTOR1));
+  it("get all departments", async () => {
+    expect(await company.getDepartments()).toEqual([DEPARTMENT2, DEPARTMENT1]);
+  });
+
+  it("get department budget", async () => {
+    expect(await company.getDepartmentBudget(DEPARTMENT1)).toBe(
+      SALARY1 + WAGE1 * HOURS1 + SALARY2 * FACTOR1
+    );
+
+    expect(await company.getDepartmentBudget(DEPARTMENT2)).toBe(
+      SALARY3 + WAGE1 * HOURS1 + (PERCENT1 * SALES1) / 100
+    );
+    expect(await company.getDepartmentBudget(DEPARTMENT4)).toBe(0);
   });
 });
 
+describe("persistence tests", async () => {
+  beforeEach(async () => await fillCompany());
+  it("save / restore persistence test", async () => {
+    if (company.saveToFile) {
+      const fileName = "test.data";
+      await company.saveToFile(fileName);
+      const companyNew = new Company();
+      await companyNew.restoreFromFile(fileName);
+      expect(await companyNew.getEmployee(ID1)).toEqual(empl1);
+      expect(await companyNew.getEmployee(ID2)).toEqual(empl2);
+      expect(await companyNew.getEmployee(ID3)).toEqual(empl3);
+      expect(await companyNew.getEmployee(ID4)).toBeNull();
+      expect(await companyNew.getDepartmentBudget(DEPARTMENT1)).toBe(
+        SALARY1 + WAGE1 * HOURS1 + SALARY2 * FACTOR1
+      );
+
+      expect(await companyNew.getDepartmentBudget(DEPARTMENT2)).toBe(
+        SALARY3 + WAGE1 * HOURS1 + (PERCENT1 * SALES1) / 100
+      );
+      expect(await companyNew.getDepartmentBudget(DEPARTMENT4)).toBe(0);
+    }
+  });
+});
